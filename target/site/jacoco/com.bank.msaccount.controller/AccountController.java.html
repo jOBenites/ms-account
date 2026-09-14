@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AccountController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">ms-account</a> &gt; <a href="index.source.html" class="el_package">com.bank.msaccount.controller</a> &gt; <span class="el_source">AccountController.java</span></div><h1>AccountController.java</h1><pre class="source lang-java linenums">package com.bank.msaccount.controller;
+
+import com.bank.msaccount.dto.AccountResponse;
+import com.bank.msaccount.dto.AccountUpdateRequest;
+import com.bank.msaccount.dto.OpenAccountRequest;
+import com.bank.msaccount.model.CheckingAccount;
+import com.bank.msaccount.model.FixedTermAccount;
+import com.bank.msaccount.model.SavingsAccount;
+import com.bank.msaccount.service.AccountService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+/**
+ * Controlador REST para la gestion de cuentas bancarias.
+ * Expone apertura de cuentas (ahorro, corriente, plazo fijo) y CRUD completo.
+ */
+@RestController
+@RequestMapping(&quot;/accounts&quot;)
+@RequiredArgsConstructor
+public class AccountController {
+
+    private final AccountService accountService;
+
+    /**
+     * Abre una cuenta de ahorro para un cliente personal.
+     *
+     * @param request solicitud con el customerId del titular
+     * @return la cuenta creada con codigo 201
+     */
+    @PostMapping(&quot;/savings&quot;)
+    public ResponseEntity&lt;AccountResponse&gt; openSavingsAccount(@RequestBody OpenAccountRequest request) {
+<span class="fc" id="L43">        SavingsAccount account = accountService.openSavingsAccount(request.getCustomerId());</span>
+<span class="fc" id="L44">        return ResponseEntity.status(HttpStatus.CREATED).body(accountService.toResponse(account));</span>
+    }
+
+    /**
+     * Abre una cuenta corriente para un cliente personal o empresarial.
+     *
+     * @param request solicitud con customerId, titulares y firmantes (opcionales)
+     * @return la cuenta creada con codigo 201
+     */
+    @PostMapping(&quot;/checking&quot;)
+    public ResponseEntity&lt;AccountResponse&gt; openCheckingAccount(@RequestBody OpenAccountRequest request) {
+<span class="fc" id="L55">        CheckingAccount account = accountService.openCheckingAccount(</span>
+<span class="fc" id="L56">                request.getCustomerId(), request.getHolderIds(), request.getSignerIds());</span>
+<span class="fc" id="L57">        return ResponseEntity.status(HttpStatus.CREATED).body(accountService.toResponse(account));</span>
+    }
+
+    /**
+     * Abre una cuenta a plazo fijo para un cliente personal.
+     *
+     * @param request solicitud con el customerId del titular
+     * @return la cuenta creada con codigo 201
+     */
+    @PostMapping(&quot;/fixed-term&quot;)
+    public ResponseEntity&lt;AccountResponse&gt; openFixedTermAccount(@RequestBody OpenAccountRequest request) {
+<span class="fc" id="L68">        FixedTermAccount account = accountService.openFixedTermAccount(request.getCustomerId());</span>
+<span class="fc" id="L69">        return ResponseEntity.status(HttpStatus.CREATED).body(accountService.toResponse(account));</span>
+    }
+
+    /**
+     * Obtiene una cuenta por su ID.
+     *
+     * @param id identificador de la cuenta
+     * @return la cuenta encontrada o 404 si no existe
+     */
+    @GetMapping(&quot;/{id}&quot;)
+    public ResponseEntity&lt;AccountResponse&gt; getAccountById(@PathVariable String id) {
+<span class="fc" id="L80">        return accountService.findById(id)</span>
+<span class="fc" id="L81">                .map(account -&gt; ResponseEntity.ok(accountService.toResponse(account)))</span>
+<span class="fc" id="L82">                .orElse(ResponseEntity.notFound().build());</span>
+    }
+
+    /**
+     * Lista todas las cuentas registradas.
+     *
+     * @return lista de cuentas
+     */
+    @GetMapping
+    public ResponseEntity&lt;List&lt;AccountResponse&gt;&gt; getAllAccounts() {
+<span class="fc" id="L92">        return ResponseEntity.ok(accountService.toResponseList(accountService.findAll()));</span>
+    }
+
+    /**
+     * Actualiza los titulares y firmantes de una cuenta corriente.
+     *
+     * @param id identificador de la cuenta
+     * @param request campos a actualizar (holderIds, signerIds)
+     * @return la cuenta actualizada o 404 si no existe
+     */
+    @PutMapping(&quot;/{id}&quot;)
+    public ResponseEntity&lt;AccountResponse&gt; updateAccount(
+            @PathVariable String id,
+            @RequestBody AccountUpdateRequest request) {
+<span class="fc" id="L106">        return accountService.update(id, request.getHolderIds(), request.getSignerIds())</span>
+<span class="fc" id="L107">                .map(account -&gt; ResponseEntity.ok(accountService.toResponse(account)))</span>
+<span class="fc" id="L108">                .orElse(ResponseEntity.notFound().build());</span>
+    }
+
+    /**
+     * Elimina una cuenta por su ID.
+     *
+     * @param id identificador de la cuenta
+     * @return 204 si se elimino, 404 si no existe
+     */
+    @DeleteMapping(&quot;/{id}&quot;)
+    public ResponseEntity&lt;Void&gt; deleteAccount(@PathVariable String id) {
+<span class="fc bfc" id="L119" title="All 2 branches covered.">        if (accountService.delete(id)) {</span>
+<span class="fc" id="L120">            return ResponseEntity.noContent().build();</span>
+        }
+<span class="fc" id="L122">        return ResponseEntity.notFound().build();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

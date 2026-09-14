@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: ms-account
+  config:
+    import: optional:configserver:http://localhost:8888
+  data:
+    mongodb:
+      uri: mongodb://devuser:devpassword@localhost:27017/account_db?authSource=admin
+  kafka:
+    consumer:
+      group-id: ms-account
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.value.default.type: java.util.Map
+
+server:
+  port: 8082
+
+eureka:
+  client:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

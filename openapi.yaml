@@ -1,0 +1,202 @@
+openapi: 3.0.3
+info:
+  title: ms-account
+  description: Microservicio de gestión de cuentas bancarias (ahorro, corriente, plazo fijo) del sistema bancario.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8082
+
+paths:
+  /accounts/savings:
+    post:
+      summary: Abrir cuenta de ahorro (solo clientes personales, máx. 1 por cliente)
+      operationId: openSavingsAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenAccountRequest'
+      responses:
+        '201':
+          description: Cuenta abierta exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '400':
+          description: Cliente inexistente, no personal o ya tiene cuenta de ahorro
+
+  /accounts/checking:
+    post:
+      summary: Abrir cuenta corriente (personal máx. 1, empresarial N con 1+ titulares)
+      operationId: openCheckingAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenAccountRequest'
+      responses:
+        '201':
+          description: Cuenta abierta exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '400':
+          description: Cliente inexistente o personal que ya tiene cuenta corriente
+
+  /accounts/fixed-term:
+    post:
+      summary: Abrir cuenta a plazo fijo (solo clientes personales, N por cliente)
+      operationId: openFixedTermAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenAccountRequest'
+      responses:
+        '201':
+          description: Cuenta abierta exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '400':
+          description: Cliente inexistente o no personal
+
+  /accounts:
+    get:
+      summary: Listar todas las cuentas
+      operationId: getAllAccounts
+      responses:
+        '200':
+          description: Lista de cuentas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AccountResponse'
+
+  /accounts/{id}:
+    get:
+      summary: Buscar cuenta por ID
+      operationId: getAccountById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cuenta encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '404':
+          description: Cuenta no encontrada
+    put:
+      summary: Actualizar titulares y firmantes (solo cuentas corrientes)
+      operationId: updateAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountUpdateRequest'
+      responses:
+        '200':
+          description: Cuenta actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '400':
+          description: La cuenta no es corriente o queda sin titulares
+        '404':
+          description: Cuenta no encontrada
+    delete:
+      summary: Eliminar cuenta
+      operationId: deleteAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Cuenta eliminada
+        '404':
+          description: Cuenta no encontrada
+
+components:
+  schemas:
+    OpenAccountRequest:
+      type: object
+      required:
+        - customerId
+      properties:
+        customerId:
+          type: string
+          description: Cliente que abre la cuenta (debe existir en la vista local alimentada por eventos)
+        holderIds:
+          type: array
+          items:
+            type: string
+          description: Solo cuenta corriente. Por defecto [customerId]
+        signerIds:
+          type: array
+          items:
+            type: string
+          description: Solo cuenta corriente. Por defecto vacío
+
+    AccountUpdateRequest:
+      type: object
+      properties:
+        holderIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        signerIds:
+          type: array
+          items:
+            type: string
+
+    AccountResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        accountNumber:
+          type: string
+        customerId:
+          type: string
+        accountType:
+          type: string
+          enum: [SAVINGS, CHECKING, FIXED_TERM]
+        balance:
+          type: number
+        holderIds:
+          type: array
+          items:
+            type: string
+          description: Solo cuentas corrientes
+        signerIds:
+          type: array
+          items:
+            type: string
+          description: Solo cuentas corrientes

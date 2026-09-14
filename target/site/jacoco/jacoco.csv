@@ -1,0 +1,15 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+ms-account,com.bank.msaccount.model,CustomerView,0,15,0,0,0,6,0,1,0,1
+ms-account,com.bank.msaccount.model,CheckingAccount,0,12,0,0,0,4,0,1,0,1
+ms-account,com.bank.msaccount.model,FixedTermAccount,0,6,0,0,0,2,0,1,0,1
+ms-account,com.bank.msaccount.model,Account,0,15,0,0,0,6,0,1,0,1
+ms-account,com.bank.msaccount.model,SavingsAccount,0,6,0,0,0,2,0,1,0,1
+ms-account,com.bank.msaccount.event,CustomerViewConsumer,0,48,0,0,0,11,0,2,0,2
+ms-account,com.bank.msaccount.event,AccountEventProducer,27,4,0,0,8,1,1,1,1,1
+ms-account,com.bank.msaccount.dto,AccountUpdateRequest,0,3,0,0,0,1,0,1,0,1
+ms-account,com.bank.msaccount.dto,AccountResponse,0,3,0,0,0,1,0,1,0,1
+ms-account,com.bank.msaccount.dto,OpenAccountRequest,0,3,0,0,0,1,0,1,0,1
+ms-account,com.bank.msaccount.controller,GlobalExceptionHandler,10,0,0,0,2,0,2,0,2,0
+ms-account,com.bank.msaccount.controller,AccountController,0,105,0,2,0,17,0,10,0,9
+ms-account,com.bank.msaccount,MsAccountApplication,8,0,0,0,3,0,2,0,2,0
+ms-account,com.bank.msaccount.service,AccountService,0,282,2,24,0,58,2,25,0,14
