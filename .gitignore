@@ -1,0 +1,37 @@
+# Compiled class files
+*.class
+
+# Maven
+target/
+*.jar
+*.war
+*.ear
+
+# Gradle
+.gradle/
+build/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Jacoco
+*.exec
+
+# Checkstyle
+checkstyle-checker.xml
+checkstyle-cachefile
