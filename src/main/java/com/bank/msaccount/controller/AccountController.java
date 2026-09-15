@@ -2,11 +2,14 @@ package com.bank.msaccount.controller;
 
 import com.bank.msaccount.dto.AccountResponse;
 import com.bank.msaccount.dto.AccountUpdateRequest;
+import com.bank.msaccount.dto.MovementRequest;
+import com.bank.msaccount.dto.MovementResponse;
 import com.bank.msaccount.dto.OpenAccountRequest;
 import com.bank.msaccount.model.CheckingAccount;
 import com.bank.msaccount.model.FixedTermAccount;
 import com.bank.msaccount.model.SavingsAccount;
 import com.bank.msaccount.service.AccountService;
+import com.bank.msaccount.service.MovementService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,7 +26,8 @@ import java.util.List;
 
 /**
  * Controlador REST para la gestion de cuentas bancarias.
- * Expone apertura de cuentas (ahorro, corriente, plazo fijo) y CRUD completo.
+ * Expone apertura de cuentas (ahorro, corriente, plazo fijo), CRUD completo,
+ * registro de depositos y retiros, y consulta de movimientos.
  */
 @RestController
 @RequestMapping("/accounts")
@@ -31,6 +35,7 @@ import java.util.List;
 public class AccountController {
 
     private final AccountService accountService;
+    private final MovementService movementService;
 
     /**
      * Abre una cuenta de ahorro para un cliente personal.
@@ -65,12 +70,61 @@ public class AccountController {
      */
     @PostMapping("/fixed-term")
     public ResponseEntity<AccountResponse> openFixedTermAccount(@RequestBody OpenAccountRequest request) {
-        FixedTermAccount account = accountService.openFixedTermAccount(request.getCustomerId());
+        FixedTermAccount account = accountService.openFixedTermAccount(
+                request.getCustomerId(), request.getAllowedDayOfMonth());
         return ResponseEntity.status(HttpStatus.CREATED).body(accountService.toResponse(account));
     }
 
     /**
+     * Registra un deposito en una cuenta.
+     *
+     * @param id identificador de la cuenta
+     * @param request solicitud con el monto a depositar
+     * @return el movimiento registrado con codigo 201, o 404 si la cuenta no existe
+     */
+    @PostMapping("/{id}/deposits")
+    public ResponseEntity<MovementResponse> deposit(
+            @PathVariable String id,
+            @RequestBody MovementRequest request) {
+        return movementService.deposit(id, request.getAmount())
+                .map(movement -> ResponseEntity.status(HttpStatus.CREATED)
+                        .body(movementService.toMovementResponse(movement)))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Registra un retiro de una cuenta.
+     *
+     * @param id identificador de la cuenta
+     * @param request solicitud con el monto a retirar
+     * @return el movimiento registrado con codigo 201, o 404 si la cuenta no existe
+     */
+    @PostMapping("/{id}/withdrawals")
+    public ResponseEntity<MovementResponse> withdraw(
+            @PathVariable String id,
+            @RequestBody MovementRequest request) {
+        return movementService.withdraw(id, request.getAmount())
+                .map(movement -> ResponseEntity.status(HttpStatus.CREATED)
+                        .body(movementService.toMovementResponse(movement)))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Lista los movimientos de una cuenta del mas reciente al mas antiguo.
+     *
+     * @param id identificador de la cuenta
+     * @return lista de movimientos, o 404 si la cuenta no existe
+     */
+    @GetMapping("/{id}/movements")
+    public ResponseEntity<List<MovementResponse>> getMovements(@PathVariable String id) {
+        return movementService.findMovements(id)
+                .map(movements -> ResponseEntity.ok(movementService.toMovementResponseList(movements)))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
      * Obtiene una cuenta por su ID.
+     * La respuesta incluye el saldo disponible de la cuenta.
      *
      * @param id identificador de la cuenta
      * @return la cuenta encontrada o 404 si no existe

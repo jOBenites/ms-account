@@ -178,7 +178,7 @@ class AccountServiceTest {
         fixedTerm.setId("acc-3");
         when(accountRepository.save(any(FixedTermAccount.class))).thenReturn(fixedTerm);
 
-        FixedTermAccount result = accountService.openFixedTermAccount("cust-1");
+        FixedTermAccount result = accountService.openFixedTermAccount("cust-1", null);
 
         assertNotNull(result);
         assertEquals(Account.TYPE_FIXED_TERM, result.getAccountType());
@@ -190,8 +190,19 @@ class AccountServiceTest {
     void openFixedTermAccount_businessCustomer_throws() {
         when(customerViewRepository.findById("cust-2")).thenReturn(Optional.of(businessView));
 
-        assertThrows(IllegalArgumentException.class, () -> accountService.openFixedTermAccount("cust-2"));
+        assertThrows(IllegalArgumentException.class,
+                () -> accountService.openFixedTermAccount("cust-2", null));
         verify(accountRepository, never()).save(any());
+    }
+
+    @Test
+    void openFixedTermAccount_customAllowedDay() {
+        when(customerViewRepository.findById("cust-1")).thenReturn(Optional.of(personalView));
+        when(accountRepository.save(any(FixedTermAccount.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        FixedTermAccount result = accountService.openFixedTermAccount("cust-1", 15);
+
+        assertEquals(15, result.getAllowedDayOfMonth());
     }
 
     @Test

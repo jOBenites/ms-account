@@ -2,12 +2,16 @@ package com.bank.msaccount.controller;
 
 import com.bank.msaccount.dto.AccountResponse;
 import com.bank.msaccount.dto.AccountUpdateRequest;
+import com.bank.msaccount.dto.MovementRequest;
+import com.bank.msaccount.dto.MovementResponse;
 import com.bank.msaccount.dto.OpenAccountRequest;
 import com.bank.msaccount.model.Account;
 import com.bank.msaccount.model.CheckingAccount;
 import com.bank.msaccount.model.FixedTermAccount;
+import com.bank.msaccount.model.Movement;
 import com.bank.msaccount.model.SavingsAccount;
 import com.bank.msaccount.service.AccountService;
+import com.bank.msaccount.service.MovementService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,6 +40,9 @@ class AccountControllerTest {
 
     @Mock
     private AccountService accountService;
+
+    @Mock
+    private MovementService movementService;
 
     @InjectMocks
     private AccountController accountController;
@@ -101,7 +108,7 @@ class AccountControllerTest {
     @Test
     void openFixedTermAccount_returns201() {
         FixedTermAccount fixedTermAccount = new FixedTermAccount("cust-1", "100000000003");
-        when(accountService.openFixedTermAccount("cust-1")).thenReturn(fixedTermAccount);
+        when(accountService.openFixedTermAccount("cust-1", null)).thenReturn(fixedTermAccount);
         AccountResponse fixedResponse = new AccountResponse();
         fixedResponse.setAccountType(Account.TYPE_FIXED_TERM);
         when(accountService.toResponse(any(FixedTermAccount.class))).thenReturn(fixedResponse);
@@ -185,6 +192,71 @@ class AccountControllerTest {
         when(accountService.delete("nonexistent")).thenReturn(false);
 
         ResponseEntity<Void> response = accountController.deleteAccount("nonexistent");
+
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+    }
+
+    @Test
+    void deposit_returns201() {
+        Movement movement = new Movement("acc-1", Movement.TYPE_DEPOSIT, java.math.BigDecimal.TEN);
+        movement.setId("mov-1");
+        when(movementService.deposit("acc-1", java.math.BigDecimal.TEN)).thenReturn(Optional.of(movement));
+        MovementResponse movementResponse = new MovementResponse();
+        movementResponse.setId("mov-1");
+        when(movementService.toMovementResponse(movement)).thenReturn(movementResponse);
+
+        MovementRequest request = new MovementRequest();
+        request.setAmount(java.math.BigDecimal.TEN);
+        ResponseEntity<MovementResponse> response = accountController.deposit("acc-1", request);
+
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals("mov-1", response.getBody().getId());
+    }
+
+    @Test
+    void deposit_accountNotFound_returns404() {
+        when(movementService.deposit("nonexistent", java.math.BigDecimal.TEN)).thenReturn(Optional.empty());
+
+        MovementRequest request = new MovementRequest();
+        request.setAmount(java.math.BigDecimal.TEN);
+        ResponseEntity<MovementResponse> response = accountController.deposit("nonexistent", request);
+
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+    }
+
+    @Test
+    void withdraw_returns201() {
+        Movement movement = new Movement("acc-1", Movement.TYPE_WITHDRAWAL, java.math.BigDecimal.ONE);
+        movement.setId("mov-2");
+        when(movementService.withdraw("acc-1", java.math.BigDecimal.ONE)).thenReturn(Optional.of(movement));
+        MovementResponse movementResponse = new MovementResponse();
+        when(movementService.toMovementResponse(movement)).thenReturn(movementResponse);
+
+        MovementRequest request = new MovementRequest();
+        request.setAmount(java.math.BigDecimal.ONE);
+        ResponseEntity<MovementResponse> response = accountController.withdraw("acc-1", request);
+
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+    }
+
+    @Test
+    void getMovements_returns200() {
+        Movement movement = new Movement("acc-1", Movement.TYPE_DEPOSIT, java.math.BigDecimal.TEN);
+        when(movementService.findMovements("acc-1")).thenReturn(Optional.of(List.of(movement)));
+        when(movementService.toMovementResponseList(List.of(movement)))
+                .thenReturn(List.of(new MovementResponse()));
+
+        ResponseEntity<List<MovementResponse>> response = accountController.getMovements("acc-1");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(1, response.getBody().size());
+    }
+
+    @Test
+    void getMovements_accountNotFound_returns404() {
+        when(movementService.findMovements("nonexistent")).thenReturn(Optional.empty());
+
+        ResponseEntity<List<MovementResponse>> response = accountController.getMovements("nonexistent");
 
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
     }

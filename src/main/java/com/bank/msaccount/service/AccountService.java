@@ -87,12 +87,15 @@ public class AccountService {
      * Un cliente personal puede tener N cuentas a plazo fijo.
      *
      * @param customerId identificador del cliente titular
+     * @param allowedDayOfMonth dia del mes en que se permiten movimientos
+     *        (nullable, por defecto 1)
      * @return la cuenta a plazo fijo creada
      * @throws IllegalArgumentException si el cliente no existe o no es personal
      */
-    public FixedTermAccount openFixedTermAccount(String customerId) {
+    public FixedTermAccount openFixedTermAccount(String customerId, Integer allowedDayOfMonth) {
         requirePersonalCustomer(customerId, "La cuenta a plazo fijo");
-        FixedTermAccount account = new FixedTermAccount(customerId, generateAccountNumber());
+        FixedTermAccount account = new FixedTermAccount(
+                customerId, generateAccountNumber(), allowedDayOfMonth);
         FixedTermAccount saved = accountRepository.save(account);
         accountEventProducer.publishAccountOpened(saved);
         return saved;
@@ -176,6 +179,12 @@ public class AccountService {
         if (account instanceof CheckingAccount checking) {
             response.setHolderIds(checking.getHolderIds());
             response.setSignerIds(checking.getSignerIds());
+        }
+        if (account instanceof SavingsAccount savings) {
+            response.setMonthlyMovementLimit(savings.getMonthlyMovementLimit());
+        }
+        if (account instanceof FixedTermAccount fixedTerm) {
+            response.setAllowedDayOfMonth(fixedTerm.getAllowedDayOfMonth());
         }
         return response;
     }

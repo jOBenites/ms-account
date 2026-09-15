@@ -8,8 +8,9 @@ import java.util.List;
 
 /**
  * DTO de respuesta generico para cualquier tipo de cuenta.
- * Contiene los campos comunes y, solo para cuentas corrientes,
- * los titulares y firmantes autorizados.
+ * Contiene los campos comunes y, segun el tipo: titulares y firmantes
+ * (corriente), limite de movimientos mensuales (ahorro) y dia permitido
+ * para movimientos (plazo fijo).
  */
 @Getter
 @Setter
@@ -22,4 +23,6 @@ public class AccountResponse {
     private BigDecimal balance;
     private List<String> holderIds;
     private List<String> signerIds;
+    private Integer monthlyMovementLimit;
+    private Integer allowedDayOfMonth;
 }

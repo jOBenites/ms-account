@@ -82,6 +82,84 @@ paths:
                 items:
                   $ref: '#/components/schemas/AccountResponse'
 
+  /accounts/{id}/deposits:
+    post:
+      summary: Registrar deposito en una cuenta
+      operationId: deposit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MovementRequest'
+      responses:
+        '201':
+          description: Deposito registrado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovementResponse'
+        '400':
+          description: Monto invalido o regla de negocio violada
+        '404':
+          description: Cuenta no encontrada
+
+  /accounts/{id}/withdrawals:
+    post:
+      summary: Registrar retiro de una cuenta
+      operationId: withdraw
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MovementRequest'
+      responses:
+        '201':
+          description: Retiro registrado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovementResponse'
+        '400':
+          description: Monto invalido, saldo insuficiente o regla de negocio violada
+        '404':
+          description: Cuenta no encontrada
+
+  /accounts/{id}/movements:
+    get:
+      summary: Listar movimientos de una cuenta (del mas reciente al mas antiguo)
+      operationId: getMovements
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de movimientos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MovementResponse'
+        '404':
+          description: Cuenta no encontrada
+
   /accounts/{id}:
     get:
       summary: Buscar cuenta por ID
@@ -200,3 +278,34 @@ components:
           items:
             type: string
           description: Solo cuentas corrientes
+        monthlyMovementLimit:
+          type: integer
+          description: Solo cuentas de ahorro. Limite de movimientos mensuales (por defecto 5)
+        allowedDayOfMonth:
+          type: integer
+          description: Solo cuentas a plazo fijo. Dia del mes en que se permiten movimientos (por defecto 1)
+
+    MovementRequest:
+      type: object
+      required:
+        - amount
+      properties:
+        amount:
+          type: number
+          description: Monto del deposito o retiro (debe ser mayor a cero)
+
+    MovementResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        accountId:
+          type: string
+        movementType:
+          type: string
+          enum: [DEPOSIT, WITHDRAWAL]
+        amount:
+          type: number
+        occurredAt:
+          type: string
+          format: date-time

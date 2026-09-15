@@ -8,6 +8,7 @@ import java.util.List;
 /**
  * DTO de solicitud para la apertura de cualquier tipo de cuenta.
  * Los titulares y firmantes solo aplican a cuentas corrientes.
+ * El dia permitido para movimientos solo aplica a cuentas a plazo fijo.
  */
 @Getter
 @Setter
@@ -16,4 +17,5 @@ public class OpenAccountRequest {
     private String customerId;
     private List<String> holderIds;
     private List<String> signerIds;
+    private Integer allowedDayOfMonth;
 }
