@@ -9,6 +9,7 @@ import com.bank.msaccount.model.SavingsAccount;
 import com.bank.msaccount.repository.AccountRepository;
 import com.bank.msaccount.repository.MovementRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -33,8 +34,33 @@ public class MovementService {
     private final MovementRepository movementRepository;
     private final AccountEventProducer accountEventProducer;
 
+    @Value("${account.free-monthly-transactions:5}")
+    private int freeMonthlyTransactions;
+
+    @Value("${account.transaction-commission:0.50}")
+    private BigDecimal transactionCommission;
+
+    /**
+     * Establece el numero de transacciones gratuitas mensuales.
+     *
+     * @param freeMonthlyTransactions nuevo limite
+     */
+    public void setFreeMonthlyTransactions(int freeMonthlyTransactions) {
+        this.freeMonthlyTransactions = freeMonthlyTransactions;
+    }
+
+    /**
+     * Establece la comision por transaccion que excede el limite.
+     *
+     * @param transactionCommission nueva comision
+     */
+    public void setTransactionCommission(BigDecimal transactionCommission) {
+        this.transactionCommission = transactionCommission;
+    }
+
     /**
      * Registra un deposito en una cuenta.
+     * Si la cuenta excede el limite de transacciones gratuitas, se cobra comision.
      *
      * @param accountId identificador de la cuenta
      * @param amount monto a depositar (mayor a cero)
@@ -45,13 +71,18 @@ public class MovementService {
                 .then(Mono.defer(() -> accountRepository.findById(accountId)))
                 .flatMap(account -> {
                     applyMovementRules(account);
-                    account.setBalance(account.getBalance().add(amount));
-                    return recordMovement(account, Movement.TYPE_DEPOSIT, amount);
+                    return countCurrentMonthMovements(accountId)
+                            .flatMap(currentCount -> {
+                                BigDecimal commission = calculateCommission(account, currentCount);
+                                account.setBalance(account.getBalance().add(amount).subtract(commission));
+                                return recordMovement(account, Movement.TYPE_DEPOSIT, amount, commission);
+                            });
                 });
     }
 
     /**
      * Registra un retiro de una cuenta.
+     * Si la cuenta excede el limite de transacciones gratuitas, se cobra comision.
      *
      * @param accountId identificador de la cuenta
      * @param amount monto a retirar (mayor a cero)
@@ -65,8 +96,12 @@ public class MovementService {
                         return Mono.error(new IllegalArgumentException("Saldo insuficiente para el retiro"));
                     }
                     applyMovementRules(account);
-                    account.setBalance(account.getBalance().subtract(amount));
-                    return recordMovement(account, Movement.TYPE_WITHDRAWAL, amount);
+                    return countCurrentMonthMovements(accountId)
+                            .flatMap(currentCount -> {
+                                BigDecimal commission = calculateCommission(account, currentCount);
+                                account.setBalance(account.getBalance().subtract(amount).subtract(commission));
+                                return recordMovement(account, Movement.TYPE_WITHDRAWAL, amount, commission);
+                            });
                 });
     }
 
@@ -98,6 +133,7 @@ public class MovementService {
         response.setAccountId(movement.getAccountId());
         response.setMovementType(movement.getMovementType());
         response.setAmount(movement.getAmount());
+        response.setCommission(movement.getCommission());
         response.setOccurredAt(movement.getOccurredAt());
         return response;
     }
@@ -148,9 +184,19 @@ public class MovementService {
                 current.atEndOfMonth().atTime(LocalTime.MAX));
     }
 
-    private Mono<Movement> recordMovement(Account account, String movementType, BigDecimal amount) {
+    private BigDecimal calculateCommission(Account account, long currentCount) {
+        if (account instanceof SavingsAccount) {
+            if (currentCount >= freeMonthlyTransactions) {
+                return transactionCommission;
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private Mono<Movement> recordMovement(Account account, String movementType,
+                                            BigDecimal amount, BigDecimal commission) {
         return accountRepository.save(account)
-                .then(movementRepository.save(new Movement(account.getId(), movementType, amount)))
+                .then(movementRepository.save(new Movement(account.getId(), movementType, amount, commission)))
                 .doOnNext(movement -> accountEventProducer.publishMovementRecorded(movement, account.getAccountType()));
     }
 }

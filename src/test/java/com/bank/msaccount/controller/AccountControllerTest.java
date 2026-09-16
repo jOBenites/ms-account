@@ -1,6 +1,7 @@
 package com.bank.msaccount.controller;
 
-import com.bank.msaccount.dto.AccountResponse;
+import
+        com.bank.msaccount.dto.AccountResponse;
 import com.bank.msaccount.dto.AccountUpdateRequest;
 import com.bank.msaccount.dto.MovementRequest;
 import com.bank.msaccount.dto.MovementResponse;
@@ -76,7 +77,7 @@ class AccountControllerTest {
 
     @Test
     void openSavingsAccount_returns201() {
-        when(accountService.openSavingsAccount("cust-1")).thenReturn(Mono.just(savingsAccount));
+        when(accountService.openSavingsAccount("cust-1", null)).thenReturn(Mono.just(savingsAccount));
         when(accountService.toResponse(savingsAccount)).thenReturn(savingsResponse);
 
         OpenAccountRequest request = new OpenAccountRequest();
@@ -93,7 +94,7 @@ class AccountControllerTest {
 
     @Test
     void openCheckingAccount_returns201() {
-        when(accountService.openCheckingAccount("cust-2", List.of("cust-2"), List.of()))
+        when(accountService.openCheckingAccount("cust-2", List.of("cust-2"), List.of(), null))
                 .thenReturn(Mono.just(checkingAccount));
         when(accountService.toResponse(checkingAccount)).thenReturn(checkingResponse);
 
@@ -114,7 +115,7 @@ class AccountControllerTest {
     @Test
     void openFixedTermAccount_returns201() {
         FixedTermAccount fixedTermAccount = new FixedTermAccount("cust-1", "100000000003");
-        when(accountService.openFixedTermAccount("cust-1", null)).thenReturn(Mono.just(fixedTermAccount));
+        when(accountService.openFixedTermAccount("cust-1", null, null)).thenReturn(Mono.just(fixedTermAccount));
         AccountResponse fixedResponse = new AccountResponse();
         fixedResponse.setAccountType(Account.TYPE_FIXED_TERM);
         when(accountService.toResponse(any(FixedTermAccount.class))).thenReturn(fixedResponse);

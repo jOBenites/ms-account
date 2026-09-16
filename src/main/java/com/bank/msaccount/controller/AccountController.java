@@ -37,12 +37,12 @@ public class AccountController {
     /**
      * Abre una cuenta de ahorro para un cliente personal.
      *
-     * @param request solicitud con el customerId del titular
+     * @param request solicitud con el customerId del titular y saldo inicial opcional
      * @return Mono con la cuenta creada y codigo 201
      */
     @PostMapping("/savings")
     public Mono<ResponseEntity<AccountResponse>> openSavingsAccount(@RequestBody OpenAccountRequest request) {
-        return accountService.openSavingsAccount(request.getCustomerId())
+        return accountService.openSavingsAccount(request.getCustomerId(), request.getInitialBalance())
                 .map(account -> ResponseEntity.status(HttpStatus.CREATED)
                         .body(accountService.toResponse(account)));
     }
@@ -50,13 +50,14 @@ public class AccountController {
     /**
      * Abre una cuenta corriente para un cliente personal o empresarial.
      *
-     * @param request solicitud con customerId, titulares y firmantes (opcionales)
+     * @param request solicitud con customerId, titulares, firmantes y saldo inicial opcional
      * @return Mono con la cuenta creada y codigo 201
      */
     @PostMapping("/checking")
     public Mono<ResponseEntity<AccountResponse>> openCheckingAccount(@RequestBody OpenAccountRequest request) {
         return accountService.openCheckingAccount(
-                        request.getCustomerId(), request.getHolderIds(), request.getSignerIds())
+                        request.getCustomerId(), request.getHolderIds(), request.getSignerIds(),
+                        request.getInitialBalance())
                 .map(account -> ResponseEntity.status(HttpStatus.CREATED)
                         .body(accountService.toResponse(account)));
     }
@@ -64,13 +65,13 @@ public class AccountController {
     /**
      * Abre una cuenta a plazo fijo para un cliente personal.
      *
-     * @param request solicitud con el customerId del titular
+     * @param request solicitud con el customerId del titular, dia permitido y saldo inicial opcional
      * @return Mono con la cuenta creada y codigo 201
      */
     @PostMapping("/fixed-term")
     public Mono<ResponseEntity<AccountResponse>> openFixedTermAccount(@RequestBody OpenAccountRequest request) {
         return accountService.openFixedTermAccount(
-                        request.getCustomerId(), request.getAllowedDayOfMonth())
+                        request.getCustomerId(), request.getAllowedDayOfMonth(), request.getInitialBalance())
                 .map(account -> ResponseEntity.status(HttpStatus.CREATED)
                         .body(accountService.toResponse(account)));
     }

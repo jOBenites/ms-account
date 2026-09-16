@@ -10,10 +10,12 @@ import com.bank.msaccount.model.SavingsAccount;
 import com.bank.msaccount.repository.AccountRepository;
 import com.bank.msaccount.repository.CustomerViewRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -36,21 +38,40 @@ public class AccountService {
     private final CustomerViewRepository customerViewRepository;
     private final AccountEventProducer accountEventProducer;
 
+    @Value("${account.minimum-opening-amount:0}")
+    private BigDecimal minimumOpeningAmount;
+
+    /**
+     * Establece el monto minimo de apertura de cuenta.
+     * Util para pruebas y configuracion dinamica.
+     *
+     * @param minimumOpeningAmount nuevo monto minimo
+     */
+    public void setMinimumOpeningAmount(BigDecimal minimumOpeningAmount) {
+        this.minimumOpeningAmount = minimumOpeningAmount;
+    }
+
     /**
      * Abre una cuenta de ahorro para un cliente personal.
      * Un cliente personal solo puede tener una cuenta de ahorro.
+     * El saldo inicial debe ser mayor o igual al monto minimo de apertura.
      *
      * @param customerId identificador del cliente titular
+     * @param initialBalance saldo inicial de la cuenta (nullable, por defecto 0)
      * @return Mono con la cuenta de ahorro creada
      */
-    public Mono<SavingsAccount> openSavingsAccount(String customerId) {
-        return requirePersonalCustomer(customerId, "La cuenta de ahorro")
+    public Mono<SavingsAccount> openSavingsAccount(String customerId, BigDecimal initialBalance) {
+        return validateInitialBalance(initialBalance)
+                .then(requirePersonalCustomer(customerId, "La cuenta de ahorro"))
                 .then(accountRepository.countByCustomerIdAndAccountType(customerId, Account.TYPE_SAVINGS))
                 .flatMap(count -> {
                     if (count > 0) {
                         return Mono.error(new IllegalArgumentException("El cliente ya tiene una cuenta de ahorro"));
                     }
                     SavingsAccount account = new SavingsAccount(customerId, generateAccountNumber());
+                    if (initialBalance != null && initialBalance.signum() > 0) {
+                        account.setBalance(initialBalance);
+                    }
                     return accountRepository.save(account)
                             .doOnNext(accountEventProducer::publishAccountOpened);
                 });
@@ -59,15 +80,18 @@ public class AccountService {
     /**
      * Abre una cuenta corriente para un cliente personal o empresarial.
      * Cliente personal: maximo una. Cliente empresarial: N cuentas.
+     * El saldo inicial debe ser mayor o igual al monto minimo de apertura.
      *
      * @param customerId identificador del cliente que abre la cuenta
      * @param holderIds identificadores de los titulares (nullable, por defecto el cliente)
      * @param signerIds identificadores de los firmantes autorizados (nullable)
+     * @param initialBalance saldo inicial de la cuenta (nullable, por defecto 0)
      * @return Mono con la cuenta corriente creada
      */
     public Mono<CheckingAccount> openCheckingAccount(String customerId, List<String> holderIds,
-                                                      List<String> signerIds) {
-        return requireCustomer(customerId)
+                                                      List<String> signerIds, BigDecimal initialBalance) {
+        return validateInitialBalance(initialBalance)
+                .then(requireCustomer(customerId))
                 .flatMap(customer -> {
                     if (CUSTOMER_TYPE_PERSONAL.equals(customer.getCustomerType())) {
                         return accountRepository.countByCustomerIdAndAccountType(
@@ -77,26 +101,34 @@ public class AccountService {
                                         return Mono.error(new IllegalArgumentException(
                                                 "El cliente personal ya tiene una cuenta corriente"));
                                     }
-                                    return createCheckingAccount(customerId, holderIds, signerIds, customer);
+                                    return createCheckingAccount(customerId, holderIds, signerIds,
+                                            customer, initialBalance);
                                 });
                     }
-                    return createCheckingAccount(customerId, holderIds, signerIds, customer);
+                    return createCheckingAccount(customerId, holderIds, signerIds, customer, initialBalance);
                 });
     }
 
     /**
      * Abre una cuenta a plazo fijo para un cliente personal.
      * Un cliente personal puede tener N cuentas a plazo fijo.
+     * El saldo inicial debe ser mayor o igual al monto minimo de apertura.
      *
      * @param customerId identificador del cliente titular
      * @param allowedDayOfMonth dia del mes en que se permiten movimientos (nullable)
+     * @param initialBalance saldo inicial de la cuenta (nullable, por defecto 0)
      * @return Mono con la cuenta a plazo fijo creada
      */
-    public Mono<FixedTermAccount> openFixedTermAccount(String customerId, Integer allowedDayOfMonth) {
-        return requirePersonalCustomer(customerId, "La cuenta a plazo fijo")
+    public Mono<FixedTermAccount> openFixedTermAccount(String customerId, Integer allowedDayOfMonth,
+                                                        BigDecimal initialBalance) {
+        return validateInitialBalance(initialBalance)
+                .then(requirePersonalCustomer(customerId, "La cuenta a plazo fijo"))
                 .then(Mono.fromCallable(() -> {
                     FixedTermAccount account = new FixedTermAccount(
                             customerId, generateAccountNumber(), allowedDayOfMonth);
+                    if (initialBalance != null && initialBalance.signum() > 0) {
+                        account.setBalance(initialBalance);
+                    }
                     return account;
                 }))
                 .flatMap(accountRepository::save)
@@ -204,10 +236,14 @@ public class AccountService {
     }
 
     private Mono<CheckingAccount> createCheckingAccount(String customerId, List<String> holderIds,
-                                                         List<String> signerIds, CustomerView customer) {
+                                                          List<String> signerIds, CustomerView customer,
+                                                          BigDecimal initialBalance) {
         List<String> holders = (holderIds == null || holderIds.isEmpty()) ? List.of(customerId) : holderIds;
         List<String> signers = signerIds == null ? List.of() : signerIds;
         CheckingAccount account = new CheckingAccount(customerId, generateAccountNumber(), holders, signers);
+        if (initialBalance != null && initialBalance.signum() > 0) {
+            account.setBalance(initialBalance);
+        }
         return accountRepository.save(account)
                 .doOnNext(accountEventProducer::publishAccountOpened);
     }
@@ -231,5 +267,24 @@ public class AccountService {
 
     private String generateAccountNumber() {
         return String.format("%012d", ThreadLocalRandom.current().nextLong(100_000_000_000L, 1_000_000_000_000L));
+    }
+
+    private Mono<Void> validateInitialBalance(BigDecimal initialBalance) {
+        if (initialBalance != null && initialBalance.compareTo(minimumOpeningAmount) < 0) {
+            return Mono.error(new IllegalArgumentException(
+                    "El saldo inicial debe ser mayor o igual al monto minimo de apertura: " + minimumOpeningAmount));
+        }
+        return Mono.empty();
+    }
+
+    /**
+     * Valida que el saldo inicial cumpla con el monto minimo de apertura.
+     * Visibilidad de paquete para pruebas.
+     *
+     * @param initialBalance saldo inicial a validar
+     * @return Mono.empty() si es valido, Mono.error() si no cumple
+     */
+    Mono<Void> validateInitialBalanceForTest(BigDecimal initialBalance) {
+        return validateInitialBalance(initialBalance);
     }
 }

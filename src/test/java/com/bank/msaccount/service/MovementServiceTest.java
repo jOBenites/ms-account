@@ -64,6 +64,9 @@ class MovementServiceTest {
 
     @BeforeEach
     void setUp() {
+        movementService.setFreeMonthlyTransactions(SavingsAccount.DEFAULT_MONTHLY_MOVEMENT_LIMIT);
+        movementService.setTransactionCommission(BigDecimal.ZERO);
+
         savingsAccount = new SavingsAccount("cust-1", "100000000001");
         savingsAccount.setId("acc-1");
 
@@ -119,18 +122,22 @@ class MovementServiceTest {
     }
 
     @Test
-    void deposit_savingsExceedsMonthlyLimit_throws() {
+    void deposit_savingsExceedsFreeLimit_appliesCommission() {
+        movementService.setFreeMonthlyTransactions(3);
+        movementService.setTransactionCommission(new BigDecimal("0.50"));
         when(accountRepository.findById("acc-1")).thenReturn(Mono.just(savingsAccount));
         when(movementRepository.countByAccountIdAndOccurredAtBetween(
                 eq("acc-1"), any(LocalDateTime.class), any(LocalDateTime.class)))
-                .thenReturn(Mono.just((long) SavingsAccount.DEFAULT_MONTHLY_MOVEMENT_LIMIT));
+                .thenReturn(Mono.just(3L));
+        when(accountRepository.save(any(Account.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(movementRepository.save(any(Movement.class))).thenReturn(Mono.just(depositMovement));
 
         StepVerifier.create(movementService.deposit("acc-1", new BigDecimal("100.00")))
-                .expectError(IllegalArgumentException.class)
-                .verify();
-
-        verify(accountRepository, never()).save(any());
-        verify(movementRepository, never()).save(any());
+                .assertNext(result -> {
+                    assertNotNull(result);
+                    assertEquals(new BigDecimal("99.50"), savingsAccount.getBalance());
+                })
+                .verifyComplete();
     }
 
     @Test

@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 
 /**
  * DTO de respuesta de un movimiento registrado sobre una cuenta.
+ * Incluye comision si la cuenta excede el limite de transacciones gratuitas.
  */
 @Getter
 @Setter
@@ -17,5 +18,6 @@ public class MovementResponse {
     private String accountId;
     private String movementType;
     private BigDecimal amount;
+    private BigDecimal commission;
     private LocalDateTime occurredAt;
 }

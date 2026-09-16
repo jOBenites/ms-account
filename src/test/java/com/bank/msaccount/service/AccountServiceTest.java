@@ -20,6 +20,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
 
@@ -66,6 +67,8 @@ class AccountServiceTest {
 
         checkingAccount = new CheckingAccount("cust-2", "100000000002", List.of("cust-2"), List.of());
         checkingAccount.setId("acc-2");
+
+        accountService.setMinimumOpeningAmount(java.math.BigDecimal.ZERO);
     }
 
     @Test
@@ -75,7 +78,7 @@ class AccountServiceTest {
                 .thenReturn(Mono.just(0L));
         when(accountRepository.save(any(SavingsAccount.class))).thenReturn(Mono.just(savingsAccount));
 
-        StepVerifier.create(accountService.openSavingsAccount("cust-1"))
+        StepVerifier.create(accountService.openSavingsAccount("cust-1", null))
                 .assertNext(result -> {
                     org.junit.jupiter.api.Assertions.assertNotNull(result);
                     assertEquals(Account.TYPE_SAVINGS, result.getAccountType());
@@ -86,12 +89,39 @@ class AccountServiceTest {
     }
 
     @Test
+    void openSavingsAccount_withInitialBalance_success() {
+        when(customerViewRepository.findById("cust-1")).thenReturn(Mono.just(personalView));
+        when(accountRepository.countByCustomerIdAndAccountType("cust-1", Account.TYPE_SAVINGS))
+                .thenReturn(Mono.just(0L));
+        SavingsAccount accountWithBalance = new SavingsAccount("cust-1", "100000000001");
+        accountWithBalance.setId("acc-1");
+        accountWithBalance.setBalance(new BigDecimal("100.00"));
+        when(accountRepository.save(any(SavingsAccount.class))).thenReturn(Mono.just(accountWithBalance));
+
+        StepVerifier.create(accountService.openSavingsAccount("cust-1", new BigDecimal("100.00")))
+                .assertNext(result -> {
+                    org.junit.jupiter.api.Assertions.assertNotNull(result);
+                    assertEquals(new BigDecimal("100.00"), result.getBalance());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void openSavingsAccount_belowMinimum_throws() {
+        accountService.setMinimumOpeningAmount(new BigDecimal("50.00"));
+
+        StepVerifier.create(accountService.validateInitialBalanceForTest(new BigDecimal("10.00")))
+                .expectError(IllegalArgumentException.class)
+                .verify();
+    }
+
+    @Test
     void openSavingsAccount_customerNotFound_throws() {
         when(customerViewRepository.findById("unknown")).thenReturn(Mono.empty());
         when(accountRepository.countByCustomerIdAndAccountType(anyString(), anyString()))
                 .thenReturn(Mono.just(0L));
 
-        StepVerifier.create(accountService.openSavingsAccount("unknown"))
+        StepVerifier.create(accountService.openSavingsAccount("unknown", null))
                 .expectError(IllegalArgumentException.class)
                 .verify();
     }
@@ -102,7 +132,7 @@ class AccountServiceTest {
         when(accountRepository.countByCustomerIdAndAccountType(anyString(), anyString()))
                 .thenReturn(Mono.just(0L));
 
-        StepVerifier.create(accountService.openSavingsAccount("cust-2"))
+        StepVerifier.create(accountService.openSavingsAccount("cust-2", null))
                 .expectError(IllegalArgumentException.class)
                 .verify();
     }
@@ -113,7 +143,7 @@ class AccountServiceTest {
         when(accountRepository.countByCustomerIdAndAccountType("cust-1", Account.TYPE_SAVINGS))
                 .thenReturn(Mono.just(1L));
 
-        StepVerifier.create(accountService.openSavingsAccount("cust-1"))
+        StepVerifier.create(accountService.openSavingsAccount("cust-1", null))
                 .expectError(IllegalArgumentException.class)
                 .verify();
 
@@ -127,7 +157,7 @@ class AccountServiceTest {
                 .thenReturn(Mono.just(0L));
         when(accountRepository.save(any(CheckingAccount.class))).thenReturn(Mono.just(checkingAccount));
 
-        StepVerifier.create(accountService.openCheckingAccount("cust-1", null, null))
+        StepVerifier.create(accountService.openCheckingAccount("cust-1", null, null, null))
                 .assertNext(org.junit.jupiter.api.Assertions::assertNotNull)
                 .verifyComplete();
 
@@ -140,7 +170,7 @@ class AccountServiceTest {
         when(accountRepository.countByCustomerIdAndAccountType("cust-1", Account.TYPE_CHECKING))
                 .thenReturn(Mono.just(1L));
 
-        StepVerifier.create(accountService.openCheckingAccount("cust-1", null, null))
+        StepVerifier.create(accountService.openCheckingAccount("cust-1", null, null, null))
                 .expectError(IllegalArgumentException.class)
                 .verify();
 
@@ -152,7 +182,7 @@ class AccountServiceTest {
         when(customerViewRepository.findById("cust-2")).thenReturn(Mono.just(businessView));
         when(accountRepository.save(any(CheckingAccount.class))).thenReturn(Mono.just(checkingAccount));
 
-        StepVerifier.create(accountService.openCheckingAccount("cust-2", null, null))
+        StepVerifier.create(accountService.openCheckingAccount("cust-2", null, null, null))
                 .assertNext(org.junit.jupiter.api.Assertions::assertNotNull)
                 .verifyComplete();
 
@@ -168,7 +198,7 @@ class AccountServiceTest {
         when(accountRepository.save(any(CheckingAccount.class))).thenReturn(Mono.just(checkingAccount));
 
         StepVerifier.create(accountService.openCheckingAccount("cust-2",
-                        List.of("cust-2", "cust-3"), List.of("cust-4")))
+                        List.of("cust-2", "cust-3"), List.of("cust-4"), null))
                 .assertNext(org.junit.jupiter.api.Assertions::assertNotNull)
                 .verifyComplete();
 
@@ -182,7 +212,7 @@ class AccountServiceTest {
     void openCheckingAccount_customerNotFound_throws() {
         when(customerViewRepository.findById("unknown")).thenReturn(Mono.empty());
 
-        StepVerifier.create(accountService.openCheckingAccount("unknown", null, null))
+        StepVerifier.create(accountService.openCheckingAccount("unknown", null, null, null))
                 .expectError(IllegalArgumentException.class)
                 .verify();
 
@@ -196,7 +226,7 @@ class AccountServiceTest {
         fixedTerm.setId("acc-3");
         when(accountRepository.save(any(FixedTermAccount.class))).thenReturn(Mono.just(fixedTerm));
 
-        StepVerifier.create(accountService.openFixedTermAccount("cust-1", null))
+        StepVerifier.create(accountService.openFixedTermAccount("cust-1", null, null))
                 .assertNext(result -> {
                     org.junit.jupiter.api.Assertions.assertNotNull(result);
                     assertEquals(Account.TYPE_FIXED_TERM, result.getAccountType());
@@ -208,7 +238,7 @@ class AccountServiceTest {
     void openFixedTermAccount_businessCustomer_throws() {
         when(customerViewRepository.findById("cust-2")).thenReturn(Mono.just(businessView));
 
-        StepVerifier.create(accountService.openFixedTermAccount("cust-2", null))
+        StepVerifier.create(accountService.openFixedTermAccount("cust-2", null, null))
                 .expectError(IllegalArgumentException.class)
                 .verify();
 
@@ -220,7 +250,7 @@ class AccountServiceTest {
         when(customerViewRepository.findById("cust-1")).thenReturn(Mono.just(personalView));
         when(accountRepository.save(any(FixedTermAccount.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
-        StepVerifier.create(accountService.openFixedTermAccount("cust-1", 15))
+        StepVerifier.create(accountService.openFixedTermAccount("cust-1", 15, null))
                 .assertNext(result -> assertEquals(15, result.getAllowedDayOfMonth()))
                 .verifyComplete();
     }
