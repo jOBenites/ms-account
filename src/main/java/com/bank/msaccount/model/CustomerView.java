@@ -27,6 +27,8 @@ public class CustomerView {
 
     private String documentNumber;
 
+    private Boolean hasCreditCard;
+
     /**
      * Constructor completo de la vista de cliente.
      *
@@ -40,5 +42,6 @@ public class CustomerView {
         this.customerType = customerType;
         this.profile = profile;
         this.documentNumber = documentNumber;
+        this.hasCreditCard = false;
     }
 }

@@ -6,9 +6,11 @@ import com.bank.msaccount.model.Account;
 import com.bank.msaccount.model.CheckingAccount;
 import com.bank.msaccount.model.CustomerView;
 import com.bank.msaccount.model.FixedTermAccount;
+import com.bank.msaccount.model.Movement;
 import com.bank.msaccount.model.SavingsAccount;
 import com.bank.msaccount.repository.AccountRepository;
 import com.bank.msaccount.repository.CustomerViewRepository;
+import com.bank.msaccount.repository.MovementRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -16,6 +18,9 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -33,13 +38,19 @@ import java.util.concurrent.ThreadLocalRandom;
 public class AccountService {
 
     private static final String CUSTOMER_TYPE_PERSONAL = "PERSONAL";
+    private static final String PROFILE_VIP = "VIP";
+    private static final String PROFILE_PYME = "PYME";
 
     private final AccountRepository accountRepository;
     private final CustomerViewRepository customerViewRepository;
     private final AccountEventProducer accountEventProducer;
+    private final MovementRepository movementRepository;
 
     @Value("${account.minimum-opening-amount:0}")
     private BigDecimal minimumOpeningAmount;
+
+    @Value("${account.vip-minimum-daily-average:0}")
+    private BigDecimal vipMinimumDailyAverage;
 
     /**
      * Establece el monto minimo de apertura de cuenta.
@@ -52,9 +63,20 @@ public class AccountService {
     }
 
     /**
+     * Establece el promedio diario minimo para cuentas VIP.
+     *
+     * @param vipMinimumDailyAverage nuevo promedio diario minimo
+     */
+    public void setVipMinimumDailyAverage(BigDecimal vipMinimumDailyAverage) {
+        this.vipMinimumDailyAverage = vipMinimumDailyAverage;
+    }
+
+    /**
      * Abre una cuenta de ahorro para un cliente personal.
      * Un cliente personal solo puede tener una cuenta de ahorro.
      * El saldo inicial debe ser mayor o igual al monto minimo de apertura.
+     * Si el perfil es VIP, requiere tarjeta de credito previa y establece
+     * un promedio diario minimo configurable.
      *
      * @param customerId identificador del cliente titular
      * @param initialBalance saldo inicial de la cuenta (nullable, por defecto 0)
@@ -63,17 +85,29 @@ public class AccountService {
     public Mono<SavingsAccount> openSavingsAccount(String customerId, BigDecimal initialBalance) {
         return validateInitialBalance(initialBalance)
                 .then(requirePersonalCustomer(customerId, "La cuenta de ahorro"))
-                .then(accountRepository.countByCustomerIdAndAccountType(customerId, Account.TYPE_SAVINGS))
-                .flatMap(count -> {
-                    if (count > 0) {
-                        return Mono.error(new IllegalArgumentException("El cliente ya tiene una cuenta de ahorro"));
+                .flatMap(customer -> {
+                    if (PROFILE_VIP.equals(customer.getProfile())) {
+                        if (!Boolean.TRUE.equals(customer.getHasCreditCard())) {
+                            return Mono.error(new IllegalArgumentException(
+                                    "El perfil VIP requiere tener una tarjeta de credito previa"));
+                        }
                     }
-                    SavingsAccount account = new SavingsAccount(customerId, generateAccountNumber());
-                    if (initialBalance != null && initialBalance.signum() > 0) {
-                        account.setBalance(initialBalance);
-                    }
-                    return accountRepository.save(account)
-                            .doOnNext(accountEventProducer::publishAccountOpened);
+                    return accountRepository.countByCustomerIdAndAccountType(customerId, Account.TYPE_SAVINGS)
+                            .flatMap(count -> {
+                                if (count > 0) {
+                                    return Mono.error(new IllegalArgumentException(
+                                            "El cliente ya tiene una cuenta de ahorro"));
+                                }
+                                SavingsAccount account = new SavingsAccount(customerId, generateAccountNumber());
+                                if (PROFILE_VIP.equals(customer.getProfile())) {
+                                    account.setMinimumDailyAverage(vipMinimumDailyAverage);
+                                }
+                                if (initialBalance != null && initialBalance.signum() > 0) {
+                                    account.setBalance(initialBalance);
+                                }
+                                return accountRepository.save(account)
+                                        .doOnNext(accountEventProducer::publishAccountOpened);
+                            });
                 });
     }
 
@@ -81,6 +115,7 @@ public class AccountService {
      * Abre una cuenta corriente para un cliente personal o empresarial.
      * Cliente personal: maximo una. Cliente empresarial: N cuentas.
      * El saldo inicial debe ser mayor o igual al monto minimo de apertura.
+     * Perfil PYME: requiere tarjeta de credito previa y la cuenta es sin comisiones.
      *
      * @param customerId identificador del cliente que abre la cuenta
      * @param holderIds identificadores de los titulares (nullable, por defecto el cliente)
@@ -93,6 +128,12 @@ public class AccountService {
         return validateInitialBalance(initialBalance)
                 .then(requireCustomer(customerId))
                 .flatMap(customer -> {
+                    if (PROFILE_PYME.equals(customer.getProfile())) {
+                        if (!Boolean.TRUE.equals(customer.getHasCreditCard())) {
+                            return Mono.error(new IllegalArgumentException(
+                                    "El perfil PYME requiere tener una tarjeta de credito previa"));
+                        }
+                    }
                     if (CUSTOMER_TYPE_PERSONAL.equals(customer.getCustomerType())) {
                         return accountRepository.countByCustomerIdAndAccountType(
                                         customerId, Account.TYPE_CHECKING)
@@ -200,6 +241,58 @@ public class AccountService {
     }
 
     /**
+     * Transfiere fondos entre dos cuentas del mismo banco.
+     * Aplica reglas de movimiento sobre la cuenta origen (tope de ahorro,
+     * dia permitido en plazo fijo, comision por exceso de transacciones).
+     * Registra un movimiento de retiro en la origen y uno de deposito en el destino.
+     * Publica dos eventos bank.movement.recorded (uno por cuenta).
+     *
+     * @param sourceAccountId cuenta origen (debe tener saldo suficiente)
+     * @param targetAccountId cuenta destino
+     * @param amount monto a transferir (mayor a cero)
+     * @return Mono con la cuenta origen actualizada
+     */
+    public Mono<Account> transfer(String sourceAccountId, String targetAccountId, BigDecimal amount) {
+        if (amount == null || amount.signum() <= 0) {
+            return Mono.error(new IllegalArgumentException("El monto debe ser mayor a cero"));
+        }
+        if (sourceAccountId.equals(targetAccountId)) {
+            return Mono.error(new IllegalArgumentException("Las cuentas origen y destino deben ser diferentes"));
+        }
+        return accountRepository.findById(sourceAccountId)
+                .switchIfEmpty(Mono.error(new IllegalArgumentException("Cuenta origen no encontrada")))
+                .zipWith(accountRepository.findById(targetAccountId)
+                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Cuenta destino no encontrada"))))
+                .flatMap(tuple -> {
+                    Account source = tuple.getT1();
+                    Account target = tuple.getT2();
+                    applyTransferRules(source);
+                    if (source.getBalance().compareTo(amount) < 0) {
+                        return Mono.error(new IllegalArgumentException("Saldo insuficiente para la transferencia"));
+                    }
+                    source.setBalance(source.getBalance().subtract(amount));
+                    target.setBalance(target.getBalance().add(amount));
+                    return accountRepository.save(source)
+                            .zipWith(accountRepository.save(target))
+                            .flatMap(pair -> {
+                                Account savedSource = pair.getT1();
+                                Account savedTarget = pair.getT2();
+                                Movement withdrawal = new Movement(savedSource.getId(),
+                                        Movement.TYPE_TRANSFER, amount);
+                                Movement deposit = new Movement(savedTarget.getId(),
+                                        Movement.TYPE_TRANSFER, amount);
+                                return movementRepository.save(withdrawal)
+                                        .doOnNext(m -> accountEventProducer.publishMovementRecorded(
+                                                m, savedSource.getAccountType()))
+                                        .then(movementRepository.save(deposit))
+                                        .doOnNext(m -> accountEventProducer.publishMovementRecorded(
+                                                m, savedTarget.getAccountType()))
+                                        .thenReturn(savedSource);
+                            });
+                });
+    }
+
+    /**
      * Convierte una entidad Account a su DTO de respuesta.
      *
      * @param account entidad a convertir
@@ -215,9 +308,11 @@ public class AccountService {
         if (account instanceof CheckingAccount checking) {
             response.setHolderIds(checking.getHolderIds());
             response.setSignerIds(checking.getSignerIds());
+            response.setCommissionFree(checking.getCommissionFree());
         }
         if (account instanceof SavingsAccount savings) {
             response.setMonthlyMovementLimit(savings.getMonthlyMovementLimit());
+            response.setMinimumDailyAverage(savings.getMinimumDailyAverage());
         }
         if (account instanceof FixedTermAccount fixedTerm) {
             response.setAllowedDayOfMonth(fixedTerm.getAllowedDayOfMonth());
@@ -241,6 +336,9 @@ public class AccountService {
         List<String> holders = (holderIds == null || holderIds.isEmpty()) ? List.of(customerId) : holderIds;
         List<String> signers = signerIds == null ? List.of() : signerIds;
         CheckingAccount account = new CheckingAccount(customerId, generateAccountNumber(), holders, signers);
+        if (PROFILE_PYME.equals(customer.getProfile())) {
+            account.setCommissionFree(true);
+        }
         if (initialBalance != null && initialBalance.signum() > 0) {
             account.setBalance(initialBalance);
         }
@@ -286,5 +384,34 @@ public class AccountService {
      */
     Mono<Void> validateInitialBalanceForTest(BigDecimal initialBalance) {
         return validateInitialBalance(initialBalance);
+    }
+
+    private void applyTransferRules(Account source) {
+        if (source instanceof SavingsAccount savings) {
+            long currentCount = countCurrentMonthMovements(source.getId()).block();
+            if (currentCount >= savings.getMonthlyMovementLimit()) {
+                throw new IllegalArgumentException(
+                        "Se alcanzo el limite de movimientos mensuales de la cuenta de ahorro");
+            }
+        }
+        if (source instanceof FixedTermAccount fixedTerm) {
+            if (LocalDate.now().getDayOfMonth() != fixedTerm.getAllowedDayOfMonth()) {
+                throw new IllegalArgumentException("La cuenta a plazo fijo solo permite movimientos el dia "
+                        + fixedTerm.getAllowedDayOfMonth() + " de cada mes");
+            }
+            long currentCount = countCurrentMonthMovements(source.getId()).block();
+            if (currentCount > 0) {
+                throw new IllegalArgumentException(
+                        "La cuenta a plazo fijo permite un solo movimiento por mes");
+            }
+        }
+    }
+
+    private Mono<Long> countCurrentMonthMovements(String accountId) {
+        YearMonth current = YearMonth.now();
+        return movementRepository.countByAccountIdAndOccurredAtBetween(
+                accountId,
+                current.atDay(1).atStartOfDay(),
+                current.atEndOfMonth().atTime(LocalTime.MAX));
     }
 }

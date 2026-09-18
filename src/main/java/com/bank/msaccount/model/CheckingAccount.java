@@ -11,6 +11,7 @@ import java.util.List;
  * Cuenta corriente.
  * Cliente personal: maximo una. Cliente empresarial: N cuentas,
  * con uno o mas titulares y cero o mas firmantes autorizados.
+ * Perfil PYME: exige tarjeta de credito previa y no cobra comisiones.
  */
 @Getter
 @Setter
@@ -21,6 +22,8 @@ public class CheckingAccount extends Account {
     private List<String> holderIds;
 
     private List<String> signerIds;
+
+    private Boolean commissionFree;
 
     /**
      * Constructor para crear una cuenta corriente.
@@ -35,5 +38,6 @@ public class CheckingAccount extends Account {
         super(customerId, accountNumber, TYPE_CHECKING);
         this.holderIds = holderIds;
         this.signerIds = signerIds;
+        this.commissionFree = false;
     }
 }

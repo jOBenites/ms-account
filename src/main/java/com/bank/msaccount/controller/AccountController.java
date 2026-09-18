@@ -5,6 +5,7 @@ import com.bank.msaccount.dto.AccountUpdateRequest;
 import com.bank.msaccount.dto.MovementRequest;
 import com.bank.msaccount.dto.MovementResponse;
 import com.bank.msaccount.dto.OpenAccountRequest;
+import com.bank.msaccount.dto.TransferRequest;
 import com.bank.msaccount.service.AccountService;
 import com.bank.msaccount.service.MovementService;
 import lombok.RequiredArgsConstructor;
@@ -179,5 +180,18 @@ public class AccountController {
                     }
                     return Mono.just(ResponseEntity.notFound().build());
                 });
+    }
+
+    /**
+     * Transfiere fondos entre dos cuentas del mismo banco.
+     *
+     * @param request solicitud con cuentas origen, destino y monto
+     * @return Mono con la cuenta origen actualizada y codigo 200
+     */
+    @PostMapping("/transfers")
+    public Mono<ResponseEntity<AccountResponse>> transfer(@RequestBody TransferRequest request) {
+        return accountService.transfer(
+                        request.getSourceAccountId(), request.getTargetAccountId(), request.getAmount())
+                .map(account -> ResponseEntity.ok(accountService.toResponse(account)));
     }
 }

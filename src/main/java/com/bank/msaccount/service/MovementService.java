@@ -3,6 +3,7 @@ package com.bank.msaccount.service;
 import com.bank.msaccount.dto.MovementResponse;
 import com.bank.msaccount.event.AccountEventProducer;
 import com.bank.msaccount.model.Account;
+import com.bank.msaccount.model.CheckingAccount;
 import com.bank.msaccount.model.FixedTermAccount;
 import com.bank.msaccount.model.Movement;
 import com.bank.msaccount.model.SavingsAccount;
@@ -185,6 +186,11 @@ public class MovementService {
     }
 
     private BigDecimal calculateCommission(Account account, long currentCount) {
+        if (account instanceof CheckingAccount checking) {
+            if (Boolean.TRUE.equals(checking.getCommissionFree())) {
+                return BigDecimal.ZERO;
+            }
+        }
         if (account instanceof SavingsAccount) {
             if (currentCount >= freeMonthlyTransactions) {
                 return transactionCommission;

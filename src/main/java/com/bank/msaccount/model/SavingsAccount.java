@@ -5,11 +5,14 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.math.BigDecimal;
+
 /**
  * Cuenta de ahorro.
  * Exclusiva de clientes personales, maximo una por cliente.
  * Tiene un tope duro de movimientos mensuales: superado el limite,
  * se rechaza cualquier deposito o retiro adicional en el mes.
+ * Para clientes VIP, se establece un promedio diario minimo.
  */
 @Getter
 @Setter
@@ -21,6 +24,8 @@ public class SavingsAccount extends Account {
     public static final int DEFAULT_MONTHLY_MOVEMENT_LIMIT = 5;
 
     private Integer monthlyMovementLimit;
+
+    private BigDecimal minimumDailyAverage;
 
     /**
      * Constructor para crear una cuenta de ahorro.

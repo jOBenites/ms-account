@@ -12,9 +12,10 @@ import java.time.LocalDateTime;
 
 /**
  * Movimiento financiero registrado sobre una cuenta bancaria.
- * Tipos: deposito (DEPOSIT) y retiro (WITHDRAWAL). Cada movimiento queda
- * asociado a su cuenta y se publica como evento bank.movement.recorded.
- * Incluye comision si la cuenta excede el limite de transacciones gratuitas.
+ * Tipos: deposito (DEPOSIT), retiro (WITHDRAWAL) y transferencia (TRANSFER).
+ * Cada movimiento queda asociado a su cuenta y se publica como evento
+ * bank.movement.recorded. Incluye comision si la cuenta excede el limite
+ * de transacciones gratuitas.
  */
 @Getter
 @Setter
@@ -26,6 +27,8 @@ public class Movement {
     public static final String TYPE_DEPOSIT = "DEPOSIT";
     /** Tipo de movimiento de retiro. */
     public static final String TYPE_WITHDRAWAL = "WITHDRAWAL";
+    /** Tipo de movimiento de transferencia. */
+    public static final String TYPE_TRANSFER = "TRANSFER";
 
     @Id
     private String id;
