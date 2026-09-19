@@ -1,15 +1,19 @@
 package com.bank.msaccount.service;
 
+import com.bank.msaccount.cache.AccountConfigCacheService;
+import com.bank.msaccount.cache.CustomerViewCacheService;
 import com.bank.msaccount.dto.AccountResponse;
 import com.bank.msaccount.event.AccountEventProducer;
 import com.bank.msaccount.model.Account;
 import com.bank.msaccount.model.CheckingAccount;
 import com.bank.msaccount.model.CustomerView;
+import com.bank.msaccount.model.DebtStatusView;
 import com.bank.msaccount.model.FixedTermAccount;
 import com.bank.msaccount.model.Movement;
 import com.bank.msaccount.model.SavingsAccount;
 import com.bank.msaccount.repository.AccountRepository;
 import com.bank.msaccount.repository.CustomerViewRepository;
+import com.bank.msaccount.repository.DebtStatusViewRepository;
 import com.bank.msaccount.repository.MovementRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,6 +49,9 @@ public class AccountService {
     private final CustomerViewRepository customerViewRepository;
     private final AccountEventProducer accountEventProducer;
     private final MovementRepository movementRepository;
+    private final CustomerViewCacheService customerViewCacheService;
+    private final AccountConfigCacheService accountConfigCacheService;
+    private final DebtStatusViewRepository debtStatusViewRepository;
 
     @Value("${account.minimum-opening-amount:0}")
     private BigDecimal minimumOpeningAmount;
@@ -83,7 +90,10 @@ public class AccountService {
      * @return Mono con la cuenta de ahorro creada
      */
     public Mono<SavingsAccount> openSavingsAccount(String customerId, BigDecimal initialBalance) {
-        return validateInitialBalance(initialBalance)
+        return accountConfigCacheService.get("minimum-opening-amount")
+                .defaultIfEmpty(minimumOpeningAmount)
+                .flatMap(minAmount -> validateInitialBalance(initialBalance, minAmount))
+                .then(requireNoOverdueDebt(customerId))
                 .then(requirePersonalCustomer(customerId, "La cuenta de ahorro"))
                 .flatMap(customer -> {
                     if (PROFILE_VIP.equals(customer.getProfile())) {
@@ -125,7 +135,10 @@ public class AccountService {
      */
     public Mono<CheckingAccount> openCheckingAccount(String customerId, List<String> holderIds,
                                                       List<String> signerIds, BigDecimal initialBalance) {
-        return validateInitialBalance(initialBalance)
+        return accountConfigCacheService.get("minimum-opening-amount")
+                .defaultIfEmpty(minimumOpeningAmount)
+                .flatMap(minAmount -> validateInitialBalance(initialBalance, minAmount))
+                .then(requireNoOverdueDebt(customerId))
                 .then(requireCustomer(customerId))
                 .flatMap(customer -> {
                     if (PROFILE_PYME.equals(customer.getProfile())) {
@@ -162,7 +175,10 @@ public class AccountService {
      */
     public Mono<FixedTermAccount> openFixedTermAccount(String customerId, Integer allowedDayOfMonth,
                                                         BigDecimal initialBalance) {
-        return validateInitialBalance(initialBalance)
+        return accountConfigCacheService.get("minimum-opening-amount")
+                .defaultIfEmpty(minimumOpeningAmount)
+                .flatMap(minAmount -> validateInitialBalance(initialBalance, minAmount))
+                .then(requireNoOverdueDebt(customerId))
                 .then(requirePersonalCustomer(customerId, "La cuenta a plazo fijo"))
                 .then(Mono.fromCallable(() -> {
                     FixedTermAccount account = new FixedTermAccount(
@@ -347,7 +363,9 @@ public class AccountService {
     }
 
     private Mono<CustomerView> requireCustomer(String customerId) {
-        return customerViewRepository.findById(customerId)
+        return customerViewCacheService.get(customerId)
+                .switchIfEmpty(customerViewRepository.findById(customerId)
+                        .flatMap(customer -> customerViewCacheService.put(customer).thenReturn(customer)))
                 .switchIfEmpty(Mono.error(new IllegalArgumentException(
                         "Cliente no encontrado o no sincronizado: " + customerId)));
     }
@@ -367,10 +385,10 @@ public class AccountService {
         return String.format("%012d", ThreadLocalRandom.current().nextLong(100_000_000_000L, 1_000_000_000_000L));
     }
 
-    private Mono<Void> validateInitialBalance(BigDecimal initialBalance) {
-        if (initialBalance != null && initialBalance.compareTo(minimumOpeningAmount) < 0) {
+    private Mono<Void> validateInitialBalance(BigDecimal initialBalance, BigDecimal minAmount) {
+        if (initialBalance != null && initialBalance.compareTo(minAmount) < 0) {
             return Mono.error(new IllegalArgumentException(
-                    "El saldo inicial debe ser mayor o igual al monto minimo de apertura: " + minimumOpeningAmount));
+                    "El saldo inicial debe ser mayor o igual al monto minimo de apertura: " + minAmount));
         }
         return Mono.empty();
     }
@@ -383,7 +401,7 @@ public class AccountService {
      * @return Mono.empty() si es valido, Mono.error() si no cumple
      */
     Mono<Void> validateInitialBalanceForTest(BigDecimal initialBalance) {
-        return validateInitialBalance(initialBalance);
+        return validateInitialBalance(initialBalance, minimumOpeningAmount);
     }
 
     private void applyTransferRules(Account source) {
@@ -413,5 +431,20 @@ public class AccountService {
                 accountId,
                 current.atDay(1).atStartOfDay(),
                 current.atEndOfMonth().atTime(LocalTime.MAX));
+    }
+
+    /**
+     * Valida que el cliente no tenga deuda vencida.
+     * Si tiene deuda vencida, rechaza la apertura de producto.
+     *
+     * @param customerId identificador del cliente
+     * @return Mono.empty() si no tiene deuda vencida, Mono.error() si tiene
+     */
+    private Mono<Void> requireNoOverdueDebt(String customerId) {
+        return debtStatusViewRepository.findById(customerId)
+                .filter(DebtStatusView::isHasOverdueDebt)
+                .flatMap(debt -> Mono.error(new IllegalArgumentException(
+                        "El cliente tiene deuda vencida y no puede adquirir nuevos productos")))
+                .then(Mono.empty());
     }
 }

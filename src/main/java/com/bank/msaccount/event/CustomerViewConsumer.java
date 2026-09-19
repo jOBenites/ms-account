@@ -1,5 +1,6 @@
 package com.bank.msaccount.event;
 
+import com.bank.msaccount.cache.CustomerViewCacheService;
 import com.bank.msaccount.model.CustomerView;
 import com.bank.msaccount.repository.CustomerViewRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,10 +23,12 @@ public class CustomerViewConsumer {
     private static final Logger log = LoggerFactory.getLogger(CustomerViewConsumer.class);
 
     private final CustomerViewRepository customerViewRepository;
+    private final CustomerViewCacheService customerViewCacheService;
 
     /**
      * Consume bank.customer.created y hace upsert de la vista local por customerId,
      * de modo que la reentrega del evento sea idempotente.
+     * Actualiza tanto MongoDB como caché Redis.
      *
      * @param payload datos del evento (customerId, customerType, profile, documentNumber)
      */
@@ -42,6 +45,7 @@ public class CustomerViewConsumer {
                     return view;
                 })
                 .flatMap(customerViewRepository::save)
-                .subscribe(v -> log.info("Vista local de cliente {} actualizada", customerId));
+                .flatMap(customerViewCacheService::put)
+                .subscribe(v -> log.info("Vista local de cliente {} actualizada (MongoDB + Redis)", customerId));
     }
 }

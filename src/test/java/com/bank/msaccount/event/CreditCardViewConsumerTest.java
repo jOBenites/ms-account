@@ -1,5 +1,6 @@
 package com.bank.msaccount.event;
 
+import com.bank.msaccount.cache.CustomerViewCacheService;
 import com.bank.msaccount.model.CustomerView;
 import com.bank.msaccount.repository.CustomerViewRepository;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,9 @@ class CreditCardViewConsumerTest {
     @Mock
     private CustomerViewRepository customerViewRepository;
 
+    @Mock
+    private CustomerViewCacheService customerViewCacheService;
+
     @InjectMocks
     private CreditCardViewConsumer creditCardViewConsumer;
 
@@ -36,6 +40,7 @@ class CreditCardViewConsumerTest {
         CustomerView existing = new CustomerView("cust-1", "PERSONAL", "VIP", "12345678");
         when(customerViewRepository.findById("cust-1")).thenReturn(Mono.just(existing));
         when(customerViewRepository.save(any(CustomerView.class))).thenReturn(Mono.just(existing));
+        when(customerViewCacheService.put(any(CustomerView.class))).thenReturn(Mono.empty());
 
         Map<String, Object> payload = Map.of(
                 "cardId", "card-1",
@@ -49,12 +54,14 @@ class CreditCardViewConsumerTest {
         verify(customerViewRepository).save(captor.capture());
         assertTrue(captor.getValue().getHasCreditCard());
         assertEquals("cust-1", captor.getValue().getCustomerId());
+        verify(customerViewCacheService).put(any(CustomerView.class));
     }
 
     @Test
     void onCreditCardIssued_newCustomer_createsViewWithHasCreditCard() {
         when(customerViewRepository.findById("cust-2")).thenReturn(Mono.empty());
         when(customerViewRepository.save(any(CustomerView.class))).thenReturn(Mono.just(new CustomerView()));
+        when(customerViewCacheService.put(any(CustomerView.class))).thenReturn(Mono.empty());
 
         Map<String, Object> payload = Map.of(
                 "cardId", "card-2",
@@ -68,5 +75,6 @@ class CreditCardViewConsumerTest {
         verify(customerViewRepository).save(captor.capture());
         assertTrue(captor.getValue().getHasCreditCard());
         assertEquals("cust-2", captor.getValue().getCustomerId());
+        verify(customerViewCacheService).put(any(CustomerView.class));
     }
 }

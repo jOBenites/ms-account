@@ -1,5 +1,6 @@
 package com.bank.msaccount.event;
 
+import com.bank.msaccount.cache.CustomerViewCacheService;
 import com.bank.msaccount.model.CustomerView;
 import com.bank.msaccount.repository.CustomerViewRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,10 +23,12 @@ public class CreditCardViewConsumer {
     private static final Logger log = LoggerFactory.getLogger(CreditCardViewConsumer.class);
 
     private final CustomerViewRepository customerViewRepository;
+    private final CustomerViewCacheService customerViewCacheService;
 
     /**
      * Consume bank.creditcard.issued y marca hasCreditCard en la vista local.
      * Si el cliente aun no tiene vista, la crea con datos minimos.
+     * Actualiza tanto MongoDB como caché Redis.
      *
      * @param payload datos del evento (cardId, customerId, cardType, creditLimit)
      */
@@ -39,6 +42,7 @@ public class CreditCardViewConsumer {
                     return view;
                 })
                 .flatMap(customerViewRepository::save)
-                .subscribe(v -> log.info("Vista local de cliente {} actualizada: tiene tarjeta de credito", customerId));
+                .flatMap(customerViewCacheService::put)
+                .subscribe(v -> log.info("Vista local de cliente {} actualizada (MongoDB + Redis): tiene tarjeta de credito", customerId));
     }
 }

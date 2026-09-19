@@ -1,5 +1,7 @@
 package com.bank.msaccount.service;
 
+import com.bank.msaccount.cache.AccountConfigCacheService;
+import com.bank.msaccount.cache.CustomerViewCacheService;
 import com.bank.msaccount.dto.AccountResponse;
 import com.bank.msaccount.event.AccountEventProducer;
 import com.bank.msaccount.model.Account;
@@ -10,6 +12,7 @@ import com.bank.msaccount.model.Movement;
 import com.bank.msaccount.model.SavingsAccount;
 import com.bank.msaccount.repository.AccountRepository;
 import com.bank.msaccount.repository.CustomerViewRepository;
+import com.bank.msaccount.repository.DebtStatusViewRepository;
 import com.bank.msaccount.repository.MovementRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,6 +59,15 @@ class AccountServiceTest {
 
     @Mock
     private MovementRepository movementRepository;
+
+    @Mock
+    private CustomerViewCacheService customerViewCacheService;
+
+    @Mock
+    private AccountConfigCacheService accountConfigCacheService;
+
+    @Mock
+    private DebtStatusViewRepository debtStatusViewRepository;
 
     @InjectMocks
     private AccountService accountService;
