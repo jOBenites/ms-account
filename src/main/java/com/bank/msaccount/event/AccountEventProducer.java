@@ -61,4 +61,5 @@ public class AccountEventProducer {
         log.info("Evento bank.movement.recorded publicado para movimiento {} sobre cuenta {}",
                 movement.getId(), movement.getAccountId());
     }
+
 }
