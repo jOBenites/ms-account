@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -81,6 +82,11 @@ class AccountServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(accountConfigCacheService.get(anyString())).thenReturn(Mono.empty());
+        lenient().when(debtStatusViewRepository.findById(anyString())).thenReturn(Mono.empty());
+        lenient().when(customerViewCacheService.get(anyString())).thenReturn(Mono.empty());
+        lenient().when(customerViewCacheService.put(any(CustomerView.class))).thenReturn(Mono.empty());
+
         personalView = new CustomerView("cust-1", "PERSONAL", "REGULAR", "12345678");
         businessView = new CustomerView("cust-2", "BUSINESS", "REGULAR", "87654321");
         vipView = new CustomerView("cust-3", "PERSONAL", "VIP", "11223344");

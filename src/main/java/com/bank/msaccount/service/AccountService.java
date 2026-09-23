@@ -282,29 +282,32 @@ public class AccountService {
                 .flatMap(tuple -> {
                     Account source = tuple.getT1();
                     Account target = tuple.getT2();
-                    applyTransferRules(source);
-                    if (source.getBalance().compareTo(amount) < 0) {
-                        return Mono.error(new IllegalArgumentException("Saldo insuficiente para la transferencia"));
-                    }
-                    source.setBalance(source.getBalance().subtract(amount));
-                    target.setBalance(target.getBalance().add(amount));
-                    return accountRepository.save(source)
-                            .zipWith(accountRepository.save(target))
-                            .flatMap(pair -> {
-                                Account savedSource = pair.getT1();
-                                Account savedTarget = pair.getT2();
-                                Movement withdrawal = new Movement(savedSource.getId(),
-                                        Movement.TYPE_TRANSFER, amount);
-                                Movement deposit = new Movement(savedTarget.getId(),
-                                        Movement.TYPE_TRANSFER, amount);
-                                return movementRepository.save(withdrawal)
-                                        .doOnNext(m -> accountEventProducer.publishMovementRecorded(
-                                                m, savedSource.getAccountType()))
-                                        .then(movementRepository.save(deposit))
-                                        .doOnNext(m -> accountEventProducer.publishMovementRecorded(
-                                                m, savedTarget.getAccountType()))
-                                        .thenReturn(savedSource);
-                            });
+                    return applyTransferRules(source)
+                            .then(Mono.defer(() -> {
+                                if (source.getBalance().compareTo(amount) < 0) {
+                                    return Mono.<Account>error(new IllegalArgumentException(
+                                            "Saldo insuficiente para la transferencia"));
+                                }
+                                source.setBalance(source.getBalance().subtract(amount));
+                                target.setBalance(target.getBalance().add(amount));
+                                return accountRepository.save(source)
+                                        .zipWith(accountRepository.save(target))
+                                        .flatMap(pair -> {
+                                            Account savedSource = pair.getT1();
+                                            Account savedTarget = pair.getT2();
+                                            Movement withdrawal = new Movement(savedSource.getId(),
+                                                    Movement.TYPE_TRANSFER, amount);
+                                            Movement deposit = new Movement(savedTarget.getId(),
+                                                    Movement.TYPE_TRANSFER, amount);
+                                            return movementRepository.save(withdrawal)
+                                                    .doOnNext(m -> accountEventProducer.publishMovementRecorded(
+                                                            m, savedSource.getAccountType()))
+                                                    .then(movementRepository.save(deposit))
+                                                    .doOnNext(m -> accountEventProducer.publishMovementRecorded(
+                                                            m, savedTarget.getAccountType()))
+                                                    .thenReturn(savedSource);
+                                        });
+                            }));
                 });
     }
 
@@ -404,25 +407,32 @@ public class AccountService {
         return validateInitialBalance(initialBalance, minimumOpeningAmount);
     }
 
-    private void applyTransferRules(Account source) {
+    private Mono<Void> applyTransferRules(Account source) {
         if (source instanceof SavingsAccount savings) {
-            long currentCount = countCurrentMonthMovements(source.getId()).block();
-            if (currentCount >= savings.getMonthlyMovementLimit()) {
-                throw new IllegalArgumentException(
-                        "Se alcanzo el limite de movimientos mensuales de la cuenta de ahorro");
-            }
+            return countCurrentMonthMovements(source.getId())
+                    .flatMap(currentCount -> {
+                        if (currentCount >= savings.getMonthlyMovementLimit()) {
+                            return Mono.error(new IllegalArgumentException(
+                                    "Se alcanzo el limite de movimientos mensuales de la cuenta de ahorro"));
+                        }
+                        return Mono.empty();
+                    });
         }
         if (source instanceof FixedTermAccount fixedTerm) {
             if (LocalDate.now().getDayOfMonth() != fixedTerm.getAllowedDayOfMonth()) {
-                throw new IllegalArgumentException("La cuenta a plazo fijo solo permite movimientos el dia "
-                        + fixedTerm.getAllowedDayOfMonth() + " de cada mes");
+                return Mono.error(new IllegalArgumentException("La cuenta a plazo fijo solo permite movimientos el dia "
+                        + fixedTerm.getAllowedDayOfMonth() + " de cada mes"));
             }
-            long currentCount = countCurrentMonthMovements(source.getId()).block();
-            if (currentCount > 0) {
-                throw new IllegalArgumentException(
-                        "La cuenta a plazo fijo permite un solo movimiento por mes");
-            }
+            return countCurrentMonthMovements(source.getId())
+                    .flatMap(currentCount -> {
+                        if (currentCount > 0) {
+                            return Mono.error(new IllegalArgumentException(
+                                    "La cuenta a plazo fijo permite un solo movimiento por mes"));
+                        }
+                        return Mono.empty();
+                    });
         }
+        return Mono.empty();
     }
 
     private Mono<Long> countCurrentMonthMovements(String accountId) {
